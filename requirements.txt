@@ -1,0 +1,21 @@
+# mm-docqa 依赖（按需安装：pip install -r requirements.txt）
+# 未锁版本，便于跨环境安装；需复现时可自行 pip freeze 锁定具体版本。
+
+# --- Web 服务 ---
+fastapi
+uvicorn
+gradio
+requests
+pydantic
+
+# --- 解析 / 检索 / 嵌入 ---
+PyMuPDF                 # import fitz：PDF 文本与图片抽取
+chromadb                # 向量库（唯一真相源）
+sentence-transformers   # bge 嵌入 + cross-encoder 重排
+huggingface_hub         # snapshot_download：离线解析模型本地路径
+jieba                   # 中文分词（BM25）
+numpy
+
+# --- 大模型调用 ---
+openai                  # OpenAI 兼容 SDK：DeepSeek（文本）+ Moonshot kimi-k2.6（看图）
+python-dotenv           # import dotenv：从 .env 读 API key

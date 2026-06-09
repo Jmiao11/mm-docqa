@@ -1,0 +1,140 @@
+"""
+api/routes.py —— 五个 HTTP 接口，把 parser/db/pipeline 串成后端服务。
+异步入库：上传只记 pending + 挂后台任务立刻返回；后台跑 parse→index→回填。
+路由不自己造资源，从 request.app.state 取共享的 pipeline / db。
+"""
+from __future__ import annotations
+
+import shutil
+import time
+import traceback
+from pathlib import Path
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile
+
+from api.schemas import (
+    Citation, DeleteResponse, DocInfo, DocStatus,
+    QueryRequest, QueryResponse, UploadResponse,
+)
+from ingest.parser import parse_pdf
+
+router = APIRouter()
+
+from core.paths import UPLOAD_DIR
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ---------- 后台任务：真正的入库工作在这里，脱离请求线程 ----------
+def _index_document(app, doc_id: str, source: str, file_path: str) -> None:
+    """解析 → 切块入库 → 回填状态。出错必须把 failed 写回 db（异步必修课）。"""
+    db = app.state.db
+    pipeline = app.state.pipeline
+    try:
+        db.update_document(doc_id, status="processing")
+
+        doc = parse_pdf(file_path)
+        doc.id = doc_id  # 用统一的 doc_id，便于关联
+        n_text = pipeline.index([doc])  # 文本：semantic 切块入库
+
+        # 多模态：抽图 → VLM caption → 图块入同一检索器（caption-then-embed）
+        n_img = 0
+        captioner = getattr(app.state, "captioner", None)
+        if captioner is not None:
+            from ingest.parser import extract_images
+            from ingest.captioner import build_image_chunks
+            from core.paths import DATA_DIR
+            figures = extract_images(file_path, DATA_DIR / "images")
+            img_chunks = build_image_chunks(figures, captioner, doc.source)
+
+            if img_chunks:
+                pipeline.retriever.index(img_chunks)
+                n_img = len(img_chunks)
+
+        db.update_document(doc_id, status="indexed",
+                           n_pages=doc.metadata.get("n_pages", 0),
+                           n_chunks=n_text + n_img)
+    except Exception as e:
+        # 后台没人看着，错误必须落库，否则前端永远 pending
+        traceback.print_exc()
+        db.update_document(doc_id, status="failed")
+        app.state.errors[doc_id] = str(e)      # 错误详情存内存，供 status 接口读
+
+
+# ---------- 1) 上传：存文件 + 记 pending + 挂后台任务 + 立刻返回 ----------
+@router.post("/documents", response_model=UploadResponse)
+async def upload_document(request: Request, background: BackgroundTasks,
+                          file: UploadFile):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "目前只支持 PDF 文件")
+
+    doc_id = Path(file.filename).stem
+    dest = UPLOAD_DIR / file.filename
+    with dest.open("wb") as f:                 # 把上传的文件存到磁盘
+        shutil.copyfileobj(file.file, f)
+
+    db = request.app.state.db
+    db.add_document(doc_id, file.filename, status="pending")
+
+    # 关键：挂后台任务，函数立刻返回，不等入库
+    background.add_task(_index_document, request.app, doc_id, file.filename, str(dest))
+    return UploadResponse(doc_id=doc_id, source=file.filename, status="pending")
+
+
+# ---------- 2) 查状态：前端轮询直到 indexed ----------
+@router.get("/documents/{doc_id}/status", response_model=DocStatus)
+async def document_status(request: Request, doc_id: str):
+    db = request.app.state.db
+    d = db.get_document(doc_id)
+    if not d:
+        raise HTTPException(404, "文档不存在")
+    return DocStatus(
+        doc_id=d["id"], source=d["source"], status=d["status"],
+        n_pages=d["n_pages"], n_chunks=d["n_chunks"],
+        error=request.app.state.errors.get(doc_id, ""),
+    )
+
+
+# ---------- 3) 列表 ----------
+@router.get("/documents", response_model=list[DocInfo])
+async def list_documents(request: Request):
+    db = request.app.state.db
+    return [
+        DocInfo(doc_id=d["id"], source=d["source"], status=d["status"],
+                n_pages=d["n_pages"], n_chunks=d["n_chunks"])
+        for d in db.list_documents()
+    ]
+
+
+# ---------- 4) 提问：调 pipeline，返回答案 + 引用 ----------
+@router.post("/query", response_model=QueryResponse)
+async def query(request: Request, req: QueryRequest):
+    pipeline = request.app.state.pipeline
+    db = request.app.state.db
+
+    result = pipeline.run(req.question, k=req.k)
+
+    # 从 llm 生成的答案里解析引用（复用 generator 的逻辑）
+    citations: list[Citation] = []
+    gen = pipeline.generator
+
+    if hasattr(gen, "build_context") and hasattr(gen, "collect_citations"):
+        _, mapping = gen.build_context(result.retrieved)
+        for c in gen.collect_citations(result.answer, mapping):
+            citations.append(Citation(**c))
+
+    # 记会话历史
+    db.add_message(req.session_id, "user", req.question)
+    db.add_message(req.session_id, "assistant", result.answer,
+                   sources=[c.model_dump() for c in citations])
+
+    return QueryResponse(answer=result.answer, citations=citations,
+                         n_retrieved=len(result.retrieved))
+
+
+# ---------- 5) 删除 ----------
+@router.delete("/documents/{doc_id}", response_model=DeleteResponse)
+async def delete_document(request: Request, doc_id: str):
+    db = request.app.state.db
+    deleted = db.delete_document(doc_id)
+    # 注：对应的向量从 Chroma 删除留到 Phase 3/5 完善，这里先删元数据
+    return DeleteResponse(doc_id=doc_id, deleted=deleted)
