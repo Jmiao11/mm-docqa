@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     cfg = RAGConfig(
         retriever="rerank",  # Phase 3：dense+BM25(RRF) 召回 → cross-encoder 重排
         chunker="semantic",  # Phase 3：句界+段落切分，不切碎句子
-        generator="llm",
+        generator="vlm",            # ← 由 "llm" 改成 "vlm"
         collection_name="docqa_v2",  # 新集合：旧 docqa 是 fixed 切的向量，不混
     )
     app.state.pipeline = build_pipeline(cfg)     # 这里加载 bge，仅此一次

@@ -144,10 +144,19 @@ def _build_generator(cfg: RAGConfig):
     if cfg.generator == "template":
         from generators.template import TemplateGenerator
         return TemplateGenerator()
+
     if cfg.generator == "llm":
         from generators.llm import LLMGenerator
         return LLMGenerator(model=cfg.llm_model)
+
+    if cfg.generator == "vlm":                          # ← 新增这 4 行
+        from generators.vlm import VLMGenerator
+        # 文本路径仍用 DeepSeek(cfg.llm_model)；命中图块时内部切 kimi-k2.6 看图作答
+        return VLMGenerator(model=cfg.llm_model)
+
     raise ValueError(f"未知 generator: {cfg.generator}")
+
+
 
 
 

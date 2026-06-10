@@ -50,10 +50,19 @@ class Citation(BaseModel):
     score: float
 
 
+class ImageHit(BaseModel):
+    """命中且被引用的图块，供前端 Gallery 展示。path 是后端本机绝对路径。"""
+    n: int
+    id: str
+    source: str
+    path: str
+
+
 class QueryResponse(BaseModel):
     """提问返回：答案 + 结构化引用 + 命中块数。"""
     answer: str
     citations: list[Citation] = []
+    images: list[ImageHit] = []  # ← 新增
     n_retrieved: int = 0
 
 

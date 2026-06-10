@@ -12,8 +12,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile
 
+# ① 顶部 import
 from api.schemas import (
-    Citation, DeleteResponse, DocInfo, DocStatus,
+    Citation, DeleteResponse, DocInfo, DocStatus, ImageHit,   # ← 加 ImageHit
     QueryRequest, QueryResponse, UploadResponse,
 )
 from ingest.parser import parse_pdf
@@ -115,6 +116,7 @@ async def query(request: Request, req: QueryRequest):
 
     # 从 llm 生成的答案里解析引用（复用 generator 的逻辑）
     citations: list[Citation] = []
+    images: list[ImageHit] = []  # ← 新增
     gen = pipeline.generator
 
     if hasattr(gen, "build_context") and hasattr(gen, "collect_citations"):
@@ -122,14 +124,26 @@ async def query(request: Request, req: QueryRequest):
         for c in gen.collect_citations(result.answer, mapping):
             citations.append(Citation(**c))
 
+        # 命中且被引用的图块 → 前端 Gallery（与引用编号严格对齐）
+        # 校验文件存在，与 VLMGenerator._image_contexts 一致，避免展示坏图
+        from pathlib import Path as _Path
+        for c in citations:
+            r = mapping.get(c.n)
+            if r is None:
+                continue
+            md = r.chunk.metadata or {}
+            p = md.get("image_path")
+            if md.get("kind") == "image" and p and _Path(p).exists():
+                images.append(ImageHit(n=c.n, id=r.chunk.id,
+                                       source=r.chunk.source, path=p))
     # 记会话历史
     db.add_message(req.session_id, "user", req.question)
     db.add_message(req.session_id, "assistant", result.answer,
                    sources=[c.model_dump() for c in citations])
 
-    return QueryResponse(answer=result.answer, citations=citations,
-                         n_retrieved=len(result.retrieved))
 
+    return QueryResponse(answer=result.answer, citations=citations,
+                         images=images, n_retrieved=len(result.retrieved))   # ← 加 images=images
 
 # ---------- 5) 删除 ----------
 @router.delete("/documents/{doc_id}", response_model=DeleteResponse)

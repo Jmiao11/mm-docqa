@@ -70,9 +70,9 @@ def refresh_docs():
 
 
 def ask(question, k):
-    """POST /query → 返回答案 + 把引用渲染成可读来源列表。"""
+    """POST /query → 返回 (答案markdown, gallery更新)。命中图走单独 Gallery 展示。"""
     if not question.strip():
-        return "请输入问题。"
+        return "请输入问题。", gr.update(value=[], visible=False)
     try:
         resp = requests.post(
             f"{API}/query",
@@ -81,13 +81,13 @@ def ask(question, k):
         )
         resp.raise_for_status()
     except Exception as e:
-        return f"提问失败：{e}"
+        return f"提问失败：{e}", gr.update(value=[], visible=False)
 
     data = resp.json()
     answer = data["answer"]
     citations = data.get("citations", [])
+    images = data.get("images", [])
 
-    # 答案里 llm 已附了"引用来源"文本，这里把结构化 citations 再渲染成清单
     out = [answer]
     if citations:
         out.append("\n---\n**引用来源：**")
@@ -95,7 +95,20 @@ def ask(question, k):
             out.append(f"- [{c['n']}] {c['source']}  "
                        f"`#{c['id']}`  (相关度 {c['score']})")
     out.append(f"\n*（检索命中 {data.get('n_retrieved', 0)} 块）*")
-    return "\n".join(out)
+
+    # images = [
+    #     {"path": "/data/images/fig3.png", "n": 1},
+    #     {"path": "/data/images/fig5.png", "n": 2},
+    # ]
+    # 命中图 → Gallery；同机直接读后端返回的本机绝对路径
+    gallery = [(img["path"], f"图 [{img['n']}]") for img in images]
+    # 结果：
+    # [
+    #     ("/data/images/fig3.png", "图 [1]"),
+    #     ("/data/images/fig5.png", "图 [2]"),
+    # ]
+    return "\n".join(out), gr.update(value=gallery, visible=bool(gallery))
+    # Gradio Gallery 要求传入 (图片路径, 标题) 的元组列表
 
 
 # ---------- 界面布局 ----------
@@ -120,13 +133,16 @@ with gr.Blocks(title="mm-docqa 文档问答助手") as demo:
             k_slider = gr.Slider(1, 20, value=4, step=1, label="检索块数 k")
             ask_btn = gr.Button("提问", variant="primary")
             answer_out = gr.Markdown(label="答案")
+            gallery_out = gr.Gallery(label="命中插图（VLM 看图作答的图）",
+                                     columns=2, object_fit="contain",
+                                     height="auto", visible=False)
 
     # 绑定事件
     upload_btn.click(upload_and_wait, inputs=file_in, outputs=upload_status) \
               .then(refresh_docs, outputs=doc_list)        # 入库完自动刷新列表
 
     refresh_btn.click(refresh_docs, outputs=doc_list)
-    ask_btn.click(ask, inputs=[question, k_slider], outputs=answer_out)
+    ask_btn.click(ask, inputs=[question, k_slider], outputs=[answer_out, gallery_out])
     demo.load(refresh_docs, outputs=doc_list)              # 打开页面就加载列表
 
 
