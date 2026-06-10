@@ -69,6 +69,14 @@ class LLMGenerator(Generator):
             mapping[i] = r
             used += len(text)
 
+            # mapping 是一个字典 {
+            #     1: Retrieved(chunk=Chunk(text="LDA主题数为12...", source="论文.pdf", ...), score=0.86),
+            #     2: Retrieved(chunk=Chunk(text="困惑度曲线显示...", source="论文.pdf", ...), score=0.74),
+            #     3: Retrieved(chunk=Chunk(text="[图caption]社会网络图...",
+            #                              metadata={"kind": "image", "image_path": "/data/images/fig3.png"}, ...),
+            #                  score=0.61),
+            # }
+
         return "\n\n".join(blocks), mapping
 
 
