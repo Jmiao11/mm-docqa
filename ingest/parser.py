@@ -19,6 +19,85 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
+# ---- 表格感知抽取 ----
+# 通用思路：二维表经朴素 get_text() 会被拍平、丢失行列对应。这里把每个非空
+# 单元格线性化成「列头 + 该行首列值 + 单元格内容」，等价于 (列, 行, 值) 三元组，
+# 让表格内容可被检索。不假设任何领域语义（不识别"星期/周次/节次"等），通用兜底。
+# 已知局限：合并单元格、跨页表、嵌套表不做特殊处理——见 README roadmap。
+
+def _looks_like_real_table(grid: list) -> bool:
+    """过滤 find_tables 的误检：要求 >=3 行、>=3 列、非空格 >=6。
+    噪声表（1 行的、几乎全空的）一律跳过，避免伤到正文型文档。"""
+    if len(grid) < 3:
+        return False
+    ncols = max((len(r) for r in grid), default=0)
+    if ncols < 3:
+        return False
+    nonempty = sum(1 for r in grid for c in r if c and c.strip())
+    return nonempty >= 6
+
+
+def _cell(v) -> str:
+    """单元格规整：None→空串，折叠所有换行/多空格。"""
+    return " ".join((v or "").split())
+
+
+def _serialize_table(grid: list) -> str:
+    """通用行列线性化：第一行视为表头，其余每行的每个非空单元格输出一行
+    「列头 行首列值 单元格内容」。无领域假设，适用任何规整二维表。"""
+    if len(grid) < 2:
+        return ""
+
+    headers = [_cell(h) for h in grid[0]]
+    out: list[str] = []
+
+    for row in grid[1:]:
+        row_label = _cell(row[0]) if row else ""        # 该行的行标签（如课程表的"第N节"）
+        start_col = 1 if row_label else 0               # 行首标签列不再重复作为数据
+        for c in range(start_col, len(row)):
+            val = _cell(row[c])
+            if not val:
+                continue
+            col = headers[c] if c < len(headers) else ""
+            # 这串代码里的 x for x in ... 并没有只输出一个单一的 x，它输出的是一整个“序列”（在 Python 中叫作迭代器/生成器）
+            prefix = " ".join(x for x in (col, row_label) if x)
+            out.append(f"{prefix} {val}".strip() if prefix else val)
+
+    return "\n".join(out)
+
+
+def _extract_tables_text(page) -> str:
+    """检测页内表格并序列化。find_tables 不存在(旧版 PyMuPDF)或异常时静默返回空，
+    不影响纯文本抽取主流程。"""
+    try:
+        tabs = page.find_tables()
+    except Exception:
+        return ""
+    blocks: list[str] = []
+    for t in getattr(tabs, "tables", []):
+        try:
+            grid = t.extract()
+        except Exception:
+            continue
+
+        # grid = [
+        #     # grid[0] —— 第一行，被当作表头
+        #     ["节次/星期", "时间", "星期一", "星期二", ..., "星期六", "星期日"],
+        #     # grid[1] —— 第二行（第一节）
+        #     ["第一节", "08:00~08:45", None, "9-16周\nPython...", ..., None, "5-8周\n职业伦理..."],
+        #     # grid[2] —— 第三行
+        #     ["第二节", "09:00~09:45", None, None, ...],
+        #     ...
+        # ]
+
+        if not _looks_like_real_table(grid):
+            continue
+        s = _serialize_table(grid)
+        if s:
+            blocks.append(s)
+    return "\n".join(blocks)
+
+
 def parse_pdf(path: str | Path) -> Document:
     """把一个 PDF 解析成单个 Document。
     metadata 里记录：总页数 + 每页在拼接全文中的起始字符位置（page_offsets）。
@@ -33,11 +112,16 @@ def parse_pdf(path: str | Path) -> Document:
     parts: list[str] = []
     page_offsets: list[int] = []      # page_offsets[i] = 第 i 页正文在全文中的起始位置
     cursor = 0
+
     for page in doc:
         page_text = _clean(page.get_text())
+        table_text = _extract_tables_text(page)  # ← 新增：表格感知抽取
+        if table_text:  # ← 新增：检不到真表则原文一字不动，零回归
+            page_text = page_text + "\n\n" + table_text  # ← 新增
         page_offsets.append(cursor)
         parts.append(page_text)
-        cursor += len(page_text) + 2  # +2 是下面用 "\n\n" 连接的两个字符
+        cursor += len(page_text) + 2
+
     doc.close()
 
     full_text = "\n\n".join(parts)
