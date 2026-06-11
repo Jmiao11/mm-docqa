@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 
-from core.interfaces import Chunk, Retrieved, Retriever
+from core.interfaces import Chunk, DeleteResult, Retrieved, Retriever
 
 # bge 的非对称检索：query 端加指令前缀，passage 端不加。
 # 实验已验证：前缀通过压低不相关项得分来拉大区分度。
@@ -78,6 +78,20 @@ class DenseRetriever(Retriever):
             embeddings=self._embed_passages([c.text for c in chunks]),
             metadatas=metadatas,
         )
+
+    def delete_by_source(self, source: str) -> "DeleteResult":
+        """删除某文件的全部向量块。按 metadata.source 过滤（index 时 source 即以标量
+        存进 metadata）。删之前先 get 一次，顺手摘出图块的 image_path 一起带出——
+        查与删在同一调用内原子完成，无竞态，让上层能连带删物理图片文件。"""
+        got = self.collection.get(where={"source": source}, include=["metadatas"])
+        ids = got.get("ids", []) or []
+        metas = got.get("metadatas", []) or []
+        image_paths = [md["image_path"] for md in metas
+                       if md and md.get("kind") == "image" and md.get("image_path")]
+        if ids:
+            self.collection.delete(where={"source": source})
+        return DeleteResult(n_chunks=len(ids), image_paths=image_paths)
+
 
     def retrieve(self, query: str, k: int) -> list[Retrieved]:
         res = self.collection.query(

@@ -115,6 +115,14 @@ class HybridRetriever(Retriever):
         self.dense.index(chunks)      # 先写 Chroma（唯一真相源）
         self._rebuild_bm25()          # 再从 Chroma 全量重建 BM25 → 两路一致
 
+    def delete_by_source(self, source: str) -> "DeleteResult":
+        """删除某文件的全部块：index 的镜像。先删 Chroma 向量，再重建 BM25。
+        BM25 是 Chroma 的派生内存索引，删了真相源不重建 → 会召回幽灵块。
+        dense 已带出图片路径，这里重建 BM25 后原样透传 result。"""
+        result = self.dense.delete_by_source(source)  # 先删 Chroma + 摘图片路径
+        self._rebuild_bm25()  # 再从 Chroma 全量重建 → 两路一致
+        return result
+
     def retrieve(self, query: str, k: int) -> list[Retrieved]:
         dense_hits = self.dense.retrieve(query, self.candidate_k)
         # dense返回语义最近的20个chunk
@@ -142,6 +150,7 @@ class HybridRetriever(Retriever):
             c = self._chunks[idx]
             rrf[c.id] += 1.0 / (self.k_rrf + rank)
             pool.setdefault(c.id, c)
+            # setdefault 的意思是：key不存在才插入，已经存在就不动。
 
         fused = sorted(rrf.items(), key=lambda kv: kv[1], reverse=True)[:k]
         return [Retrieved(chunk=pool[cid], score=score) for cid, score in fused]

@@ -29,6 +29,10 @@ class RerankRetriever(Retriever):
     def index(self, chunks: list[Chunk]) -> None:
         self.base.index(chunks)           # 索引全交给第一阶段，自己不存
 
+
+    def delete_by_source(self, source: str) -> int:
+        return self.base.delete_by_source(source)   # 自己不存东西，删除纯委托给 base
+
     def retrieve(self, query: str, k: int) -> list[Retrieved]:
         cands = self.base.retrieve(query, self.candidate_k)
         if not cands:

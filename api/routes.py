@@ -148,7 +148,38 @@ async def query(request: Request, req: QueryRequest):
 # ---------- 5) 删除 ----------
 @router.delete("/documents/{doc_id}", response_model=DeleteResponse)
 async def delete_document(request: Request, doc_id: str):
+    """删除文档：入库的逆操作，对称拆掉入库写下的三处（向量 / 图片文件 / 元数据）。
+
+    顺序锁死：先删向量（顺手带出图片路径，趁向量还在）→ 删图片文件 → 删元数据。
+    失败分级（无跨存储事务）：删向量是主操作，影响检索正确性，失败则整体报错；
+    删图片文件是副作用，孤儿文件只是磁盘垃圾、不影响正确性，失败只记日志不中断。
+    """
     db = request.app.state.db
+    pipeline = request.app.state.pipeline
+
+    doc = db.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"文档不存在: {doc_id}")
+    source = doc["source"]
+
+    # ① 主操作：删向量（retriever 按 source 真删 + 重建 BM25 + 带出图片路径）
+    result = pipeline.retriever.delete_by_source(source)
+
+    # ② 副作用：删物理图片文件，尽力而为，失败不中断
+    n_images = 0
+    for p in result.image_paths:
+        try:
+            fp = Path(p)
+            if fp.exists():
+                fp.unlink()
+                # unlink 就是删除这个文件
+                n_images += 1
+        except Exception as e:
+            traceback.print_exc()
+            print(f"[delete] 图片文件删除失败（已跳过，不影响检索）: {p} — {e}")
+
+    # ③ 删元数据（本就支持）
     deleted = db.delete_document(doc_id)
-    # 注：对应的向量从 Chroma 删除留到 Phase 3/5 完善，这里先删元数据
-    return DeleteResponse(doc_id=doc_id, deleted=deleted)
+
+    return DeleteResponse(doc_id=doc_id, deleted=deleted,
+                          n_chunks=result.n_chunks, n_images=n_images)

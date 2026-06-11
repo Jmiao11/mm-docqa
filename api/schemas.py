@@ -70,3 +70,5 @@ class QueryResponse(BaseModel):
 class DeleteResponse(BaseModel):
     doc_id: str
     deleted: bool
+    n_chunks: int = 0        # 删除的向量块数（含文本块+图块）
+    n_images: int = 0        # 删除的物理图片文件数

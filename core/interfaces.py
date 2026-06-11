@@ -50,6 +50,13 @@ class Retrieved:
     chunk: Chunk
     score: float
 
+@dataclass
+class DeleteResult:
+    """按 source 删除的产物：删了几块向量 + 这些块附带的图片文件路径。
+    image_paths 让上层（routes 编排）能连带删掉 data/images 下的物理文件，
+    避免孤儿文件。由 retriever 在删除时一次性带出（查与删原子，无竞态）。"""
+    n_chunks: int = 0
+    image_paths: list[str] = field(default_factory=list)
 
 
 @dataclass
