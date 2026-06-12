@@ -42,6 +42,15 @@ flowchart LR
 
 > 诚实说明：黄金集 n=6，单题权重 0.167，结论**方向性可信、统计量偏小**；rerank 在小 k 占优，但更激进的重排会在 Recall@5 上略低于 hybrid（偶把相关块挤出）。评估脚本见 `scripts/eval_*.py`。
 
+**答案质量评估**（`evaluators/answer.py`，兑现同一 `Evaluator` 接口）：在检索评估之外，对最终答案做两个**确定性**指标——
+
+- **CitationPrecision**：答案标注的 `[n]` 引用有几成落在检索范围内（抓「幻觉引用」）。实测 **1.00**，为「带引用来源」这一核心卖点提供确定性证据。
+- **AnswerCoverage**：`expected_answer` 关键点的字面命中率（弱信号，不等于正确率）。实测 **0.83**，并真实暴露出「社会网络结论」一题答案覆盖不足——评估用于探测问题，不为刷分。
+
+> 为什么不用 LLM-as-judge：评估优先**可复现**（同输入同输出）才能可信地背书改进，而 LLM 评分非确定；且「用 DeepSeek 生成、再用 DeepSeek 评判」有自评偏袒。LLM-judge 列入 roadmap，未来若引入需独立裁判模型 + 多次采样 + 人工抽检校准。脚本 `scripts/eval_answer.py`。
+
+
+
 设计取舍：RRF 融合**只用名次不用原始分**（`score = Σ 1/(60+rank)`），绕开向量 cosine 与 BM25 分数量纲不可比的标定难题；BM25 索引每次从 Chroma 全量重建，保证「Chroma 是唯一真相源」、重启自愈、多次上传不漂移。
 
 ---
@@ -86,7 +95,7 @@ chunkers/    fixed · semantic(句界+段落硬边界)
 retrievers/  dense(bge+Chroma) · keyword(BM25) · hybrid(RRF融合) · rerank(交叉编码器)
 generators/  template · llm(DeepSeek 开卷+引用编号)
 ingest/      parser(抽文本/抽图) · captioner(VLM 配文 + 图块构建)
-evaluators/  retrieval(HitRate@k / Recall@k / MRR)
+evaluators/  retrieval(HitRate@k / Recall@k / MRR) · answer(CitationPrecision / AnswerCoverage)
 store/       metadata_db(SQLite：文档状态 + 会话历史)
 api/         main(共享资源) · routes(异步入库 + 提问) · schemas(前后端合同)
 app.py       Gradio 界面
