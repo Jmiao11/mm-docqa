@@ -69,6 +69,34 @@ def refresh_docs():
     return "\n".join(rows)
 
 
+def refresh_doc_choices():
+    """GET /documents → 取 doc_id 列表，更新删除下拉框的可选项。
+    用 gr.update(choices=...) 才能动态改下拉框选项（同 Gallery 的 gr.update 机制）。"""
+    try:
+        docs = requests.get(f"{API}/documents", timeout=10).json()
+    except Exception:
+        return gr.update(choices=[], value=None)
+    choices = [d["doc_id"] for d in docs]
+    return gr.update(choices=choices, value=None)
+
+
+def delete_doc(doc_id):
+    """DELETE /documents/{doc_id} → 删某文档（向量+图片+元数据）。
+    doc_id 含中文，requests 会自动 URL 编码，无需手动 quote。"""
+    if not doc_id:
+        return "请先在下拉框选择要删除的文档。"
+    try:
+        resp = requests.delete(f"{API}/documents/{doc_id}", timeout=30)
+        resp.raise_for_status()
+    except Exception as e:
+        return f"删除失败：{e}"
+    d = resp.json()
+    if not d.get("deleted"):
+        return f"未删除（文档不存在？）：{doc_id}"
+    return (f"🗑 已删除：{doc_id}\n"
+            f"   清理向量块 {d.get('n_chunks', 0)} 块，图片文件 {d.get('n_images', 0)} 个。")
+
+
 def ask(question, k):
     """POST /query → 返回 (答案markdown, gallery更新)。命中图走单独 Gallery 展示。"""
     if not question.strip():
@@ -125,6 +153,11 @@ with gr.Blocks(title="mm-docqa 文档问答助手") as demo:
             refresh_btn = gr.Button("刷新文档列表")
             doc_list = gr.Markdown("知识库为空。")
 
+            del_dropdown = gr.Dropdown(label="选择要删除的文档", choices=[],
+                                       interactive=True)
+            del_btn = gr.Button("删除选中文档", variant="stop")
+            del_status = gr.Textbox(label="删除结果", lines=2, interactive=False)
+
         # 右栏：问答
         with gr.Column(scale=2):
             gr.Markdown("### 提问")
@@ -137,14 +170,22 @@ with gr.Blocks(title="mm-docqa 文档问答助手") as demo:
                                      columns=2, object_fit="contain",
                                      height="auto", visible=False)
 
-    # 绑定事件
-    upload_btn.click(upload_and_wait, inputs=file_in, outputs=upload_status) \
-              .then(refresh_docs, outputs=doc_list)        # 入库完自动刷新列表
+        # 绑定事件
+        upload_btn.click(upload_and_wait, inputs=file_in, outputs=upload_status) \
+            .then(refresh_docs, outputs=doc_list) \
+            .then(refresh_doc_choices, outputs=del_dropdown)  # 入库完同步列表+下拉框
 
-    refresh_btn.click(refresh_docs, outputs=doc_list)
-    ask_btn.click(ask, inputs=[question, k_slider], outputs=[answer_out, gallery_out])
-    demo.load(refresh_docs, outputs=doc_list)              # 打开页面就加载列表
+        refresh_btn.click(refresh_docs, outputs=doc_list) \
+            .then(refresh_doc_choices, outputs=del_dropdown)
 
+        # 删除：删完同步刷新 Markdown 列表 + 下拉框（两处派生视图都要更新）
+        del_btn.click(delete_doc, inputs=del_dropdown, outputs=del_status) \
+            .then(refresh_docs, outputs=doc_list) \
+            .then(refresh_doc_choices, outputs=del_dropdown)
+
+        ask_btn.click(ask, inputs=[question, k_slider], outputs=[answer_out, gallery_out])
+        demo.load(refresh_docs, outputs=doc_list) \
+            .then(refresh_doc_choices, outputs=del_dropdown)  # 打开页面就加载列表+下拉框
 
 if __name__ == "__main__":
     demo.launch(server_name="127.0.0.1", server_port=7860)
