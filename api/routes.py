@@ -146,6 +146,20 @@ async def query(request: Request, req: QueryRequest):
                          images=images, n_retrieved=len(result.retrieved))   # ← 加 images=images
 
 # ---------- 5) 删除 ----------
+def _safe_unlink(path) -> int:
+    """删一个物理文件，尽力而为：存在则删、返回 1；不存在或删失败 → 记日志返回 0，
+    绝不抛出。删图片和删原始 PDF 共用——都属于"副作用文件，失败不影响检索正确性"。"""
+    try:
+        fp = Path(path)
+        if fp.exists():
+            fp.unlink()
+            return 1
+    except Exception as e:
+        traceback.print_exc()
+        print(f"[delete] 物理文件删除失败（已跳过，不影响检索）: {path} — {e}")
+    return 0
+
+
 @router.delete("/documents/{doc_id}", response_model=DeleteResponse)
 async def delete_document(request: Request, doc_id: str):
     """删除文档：入库的逆操作，对称拆掉入库写下的三处（向量 / 图片文件 / 元数据）。
@@ -165,18 +179,9 @@ async def delete_document(request: Request, doc_id: str):
     # ① 主操作：删向量（retriever 按 source 真删 + 重建 BM25 + 带出图片路径）
     result = pipeline.retriever.delete_by_source(source)
 
-    # ② 副作用：删物理图片文件，尽力而为，失败不中断
-    n_images = 0
-    for p in result.image_paths:
-        try:
-            fp = Path(p)
-            if fp.exists():
-                fp.unlink()
-                # unlink 就是删除这个文件
-                n_images += 1
-        except Exception as e:
-            traceback.print_exc()
-            print(f"[delete] 图片文件删除失败（已跳过，不影响检索）: {p} — {e}")
+    # ② 副作用：删物理文件（抽出的图 + 原始 PDF），尽力而为，失败不中断
+    n_images = sum(_safe_unlink(p) for p in result.image_paths)
+    _safe_unlink(UPLOAD_DIR / source)  # 原始 PDF：入库时存在 UPLOAD_DIR/{source}
 
     # ③ 删元数据（本就支持）
     deleted = db.delete_document(doc_id)
