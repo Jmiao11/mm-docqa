@@ -64,7 +64,7 @@ class QueryResponse(BaseModel):
     citations: list[Citation] = []
     images: list[ImageHit] = []  # ← 新增
     n_retrieved: int = 0
-
+    standalone_query: str = ""   # 多轮：历史感知改写后的独立检索 query（首轮=原问题）
 
 # ---------- 通用 ----------
 class DeleteResponse(BaseModel):

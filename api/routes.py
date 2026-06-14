@@ -112,8 +112,16 @@ async def list_documents(request: Request):
 async def query(request: Request, req: QueryRequest):
     pipeline = request.app.state.pipeline
     db = request.app.state.db
+    rewriter = request.app.state.rewriter
 
-    result = pipeline.run(req.question, k=req.k)
+    # 多轮：读本轮之前的历史 → 改写成自洽独立 query（首轮无历史则原样）。
+    # 改写吸收历史依赖，pipeline.run 仍是无状态单轮、签名不动。
+    history = db.get_messages(req.session_id)
+    standalone_query = rewriter.rewrite(history, req.question)
+    if standalone_query != req.question:   # 仅改写生效时打印（首轮/自洽问题不打扰），录 demo 可见
+        print(f"[rewrite] {req.question!r} → {standalone_query!r}")
+
+    result = pipeline.run(standalone_query, k=req.k)
 
     # 从 llm 生成的答案里解析引用（复用 generator 的逻辑）
     citations: list[Citation] = []
@@ -137,14 +145,15 @@ async def query(request: Request, req: QueryRequest):
             if md.get("kind") == "image" and p and _Path(p).exists():
                 images.append(ImageHit(n=c.n, id=r.chunk.id,
                                        source=r.chunk.source, path=p))
-    # 记会话历史
+    # 记会话历史：存用户的【原始】问题（历史要反映真实对话，不存改写结果）
     db.add_message(req.session_id, "user", req.question)
     db.add_message(req.session_id, "assistant", result.answer,
                    sources=[c.model_dump() for c in citations])
 
 
     return QueryResponse(answer=result.answer, citations=citations,
-                         images=images, n_retrieved=len(result.retrieved))   # ← 加 images=images
+                         images=images, n_retrieved=len(result.retrieved),
+                         standalone_query=standalone_query)
 
 # ---------- 5) 删除 ----------
 def _safe_unlink(path) -> int:

@@ -11,7 +11,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from api.routes import router
-from core.config import RAGConfig, build_loader, build_pipeline
+from core.config import RAGConfig, build_loader, build_pipeline, build_rewriter
 from store.metadata_db import MetadataDB
 
 
@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.pipeline = build_pipeline(cfg)     # 这里加载 bge，仅此一次
     app.state.loader = build_loader(cfg)         # 加载层：按扩展名分派 pdf/txt/md
+    app.state.rewriter = build_rewriter(cfg)  # 查询改写层：多轮历史感知改写
     from core.paths import DB_PATH
     app.state.db = MetadataDB(str(DB_PATH))
 

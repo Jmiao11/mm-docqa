@@ -23,6 +23,9 @@ class RAGConfig:
     # —— 加载 ——
     loader: str = "auto"  # "auto"：按扩展名分派 pdf/txt/md
 
+    # —— 查询改写（多轮）——
+    rewriter: str = "llm"  # "llm"：历史感知改写 | "noop"：直通（退化单轮）
+
     # —— 分块 ——
     chunker: str = "fixed"  # "fixed" | "semantic"
     chunk_size: int = 200  # fixed: 窗口大小 / semantic: 块字符上限
@@ -141,8 +144,6 @@ def _build_retriever(cfg: RAGConfig):
 
     raise ValueError(f"未知 retriever: {cfg.retriever}")
 
-
-
 def _build_generator(cfg: RAGConfig):
     if cfg.generator == "template":
         from generators.template import TemplateGenerator
@@ -158,9 +159,6 @@ def _build_generator(cfg: RAGConfig):
         return VLMGenerator(model=cfg.llm_model)
 
     raise ValueError(f"未知 generator: {cfg.generator}")
-
-
-
 
 
 def build_pipeline(cfg: RAGConfig) -> RAGPipeline:
@@ -184,3 +182,17 @@ def build_loader(cfg: RAGConfig) -> "DocumentLoader":
         return AutoLoader({".pdf": pdf, ".txt": text, ".md": text})
 
     raise ValueError(f"未知 loader: {cfg.loader}")
+
+
+def build_rewriter(cfg: RAGConfig) -> "QueryRewriter":
+    """查询改写层工厂：与 build_loader 对称，编排层组件（不进 pipeline）。
+    多轮的"大脑"：改写在 pipeline.run 之前，吸收历史依赖，内核保持无状态单轮。
+    换改写策略只改这里的分支。守"只在 config 接入"铁律。"""
+    if cfg.rewriter == "llm":
+        from rewriters.llm import LLMRewriter
+        return LLMRewriter()
+    if cfg.rewriter == "noop":
+        from rewriters.noop import NoOpRewriter
+        return NoOpRewriter()
+
+    raise ValueError(f"未知 rewriter: {cfg.rewriter}")

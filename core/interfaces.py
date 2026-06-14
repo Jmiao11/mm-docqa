@@ -133,6 +133,21 @@ class Generator(ABC):
         ...
 
 
+class QueryRewriter(ABC):
+    """查询改写器：用对话历史把"依赖上文的追问"改写成"自洽的独立检索 query"。
+    多轮 RAG 的大脑——它在进入检索前就把历史依赖吸收掉，于是下游 retrieve / generate
+    仍是无状态单轮，pipeline.run 一行不改。属在线查询路径的编排层组件（不进 pipeline）。
+
+    实现铁律：history 为空（首轮）时原样返回 query、不调 LLM；改写失败必须回退原句，
+    绝不拖垮检索（改写是增强而非必需）。"""
+
+    @abstractmethod
+    def rewrite(self, history: list[dict], query: str) -> str:
+        """history: [{'role':'user'|'assistant', 'content':str}, ...]（本轮之前的轮次）。
+        返回自洽的独立查询字符串。"""
+        ...
+
+
 class Evaluator(ABC):
     """评估器（背书层）：用 RAGResult + EvalSample 算指标。"""
 
