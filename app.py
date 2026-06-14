@@ -19,15 +19,18 @@ SESSION = "gradio-session"          # 简单起见，固定一个会话
 def upload_and_wait(file):
     """上传 PDF，然后轮询状态直到入库完成。用 yield 实时更新界面进度。"""
     if file is None:
-        yield "请先选择一个 PDF 文件。"
+        yield "请先选择一个文件（PDF / txt / md）。"
         return
 
     # 1) 上传 → POST /documents
     try:
+        fname = file.name.split("/")[-1].split("\\")[-1]
+        import mimetypes
+        mime = mimetypes.guess_type(fname)[0] or "application/octet-stream"
         with open(file.name, "rb") as f:
             resp = requests.post(
                 f"{API}/documents",
-                files={"file": (file.name.split("/")[-1].split("\\")[-1], f, "application/pdf")},
+                files={"file": (fname, f, mime)},
                 timeout=30,
             )
         resp.raise_for_status()
@@ -147,7 +150,8 @@ with gr.Blocks(title="mm-docqa 文档问答助手") as demo:
         # 左栏：上传 + 文档列表
         with gr.Column(scale=1):
             gr.Markdown("### 知识库")
-            file_in = gr.File(label="上传 PDF", file_types=[".pdf"])
+            file_in = gr.File(label="上传文档（PDF / txt / md）",
+                              file_types=[".pdf", ".txt", ".md"])
             upload_btn = gr.Button("上传并入库", variant="primary")
             upload_status = gr.Textbox(label="处理状态", lines=4, interactive=False)
             refresh_btn = gr.Button("刷新文档列表")

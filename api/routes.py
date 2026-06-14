@@ -30,10 +30,11 @@ def _index_document(app, doc_id: str, source: str, file_path: str) -> None:
     """解析 → 切块入库 → 回填状态。出错必须把 failed 写回 db（异步必修课）。"""
     db = app.state.db
     pipeline = app.state.pipeline
+    loader = app.state.loader
     try:
         db.update_document(doc_id, status="processing")
 
-        doc = parse_pdf(file_path)
+        doc = loader.load(file_path)  # 按扩展名分派：pdf/txt/md，routes 不判型
         doc.id = doc_id  # 用统一的 doc_id，便于关联
         n_text = pipeline.index([doc])  # 文本：semantic 切块入库
 
@@ -41,12 +42,10 @@ def _index_document(app, doc_id: str, source: str, file_path: str) -> None:
         n_img = 0
         captioner = getattr(app.state, "captioner", None)
         if captioner is not None:
-            from ingest.parser import extract_images
             from ingest.captioner import build_image_chunks
             from core.paths import DATA_DIR
-            figures = extract_images(file_path, DATA_DIR / "images")
+            figures = loader.load_images(file_path, DATA_DIR / "images")
             img_chunks = build_image_chunks(figures, captioner, doc.source)
-
             if img_chunks:
                 pipeline.retriever.index(img_chunks)
                 n_img = len(img_chunks)
@@ -65,8 +64,10 @@ def _index_document(app, doc_id: str, source: str, file_path: str) -> None:
 @router.post("/documents", response_model=UploadResponse)
 async def upload_document(request: Request, background: BackgroundTasks,
                           file: UploadFile):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "目前只支持 PDF 文件")
+    loader = request.app.state.loader
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in loader.supported:  # 已支持后缀以 loader 注册表为唯一真相
+        raise HTTPException(400, f"暂不支持 {suffix or '该'} 格式；已支持：{loader.supported}")
 
     doc_id = Path(file.filename).stem
     dest = UPLOAD_DIR / file.filename

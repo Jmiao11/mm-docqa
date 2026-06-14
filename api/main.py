@@ -11,7 +11,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from api.routes import router
-from core.config import RAGConfig, build_pipeline
+from core.config import RAGConfig, build_loader, build_pipeline
 from store.metadata_db import MetadataDB
 
 
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
         collection_name="docqa_v2",  # 新集合：旧 docqa 是 fixed 切的向量，不混
     )
     app.state.pipeline = build_pipeline(cfg)     # 这里加载 bge，仅此一次
+    app.state.loader = build_loader(cfg)         # 加载层：按扩展名分派 pdf/txt/md
     from core.paths import DB_PATH
     app.state.db = MetadataDB(str(DB_PATH))
 

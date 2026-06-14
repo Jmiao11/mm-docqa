@@ -20,6 +20,9 @@ from core.pipeline import RAGPipeline
 @dataclass
 class RAGConfig:
     """一次运行的全部可调参数。新增策略时，往这里加字段即可。"""
+    # —— 加载 ——
+    loader: str = "auto"  # "auto"：按扩展名分派 pdf/txt/md
+
     # —— 分块 ——
     chunker: str = "fixed"  # "fixed" | "semantic"
     chunk_size: int = 200  # fixed: 窗口大小 / semantic: 块字符上限
@@ -167,3 +170,17 @@ def build_pipeline(cfg: RAGConfig) -> RAGPipeline:
         retriever=_build_retriever(cfg),
         generator=_build_generator(cfg),
     )
+
+
+def build_loader(cfg: RAGConfig) -> "DocumentLoader":
+    """加载层工厂：与 build_pipeline 对称，是加载组件的唯一装配处。
+    loader 在 pipeline 之外（pipeline.index 吃的是已加载的 Document），故单独建、
+    由 main.py 注入 app.state.loader——与 captioner 同为 ingest 级共享资源。
+    加新格式 = 往注册表加一项；换分派策略 = 在此加分支。守"只在 config 接入"铁律。"""
+    if cfg.loader == "auto":
+        from ingest.loaders import AutoLoader, PdfLoader, TextLoader
+        pdf, text = PdfLoader(), TextLoader()
+        # 注册表：键=小写后缀。txt 与 md 共用 TextLoader。
+        return AutoLoader({".pdf": pdf, ".txt": text, ".md": text})
+
+    raise ValueError(f"未知 loader: {cfg.loader}")

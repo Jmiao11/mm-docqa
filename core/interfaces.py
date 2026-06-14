@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -78,8 +79,27 @@ class EvalSample:
 
 
 # ============================================================
-# 接口（4 个 ABC）：组件的"插座"，定义能力不定义实现
+# 接口（5 个 ABC）：组件的"插座"，定义能力不定义实现
 # ============================================================
+# path -> Loader -> Document -> Chunker -> Retriever -> Generator
+class DocumentLoader(ABC):
+    """加载器：原始文件 path -> Document（解析 + 清洗 + 元数据）。
+    处于整条链最上游：path -> Loader -> Document -> Chunker -> Retriever -> Generator。
+    是承重墙最后一段——把"文档加载"从裸函数升格为可插拔接口，与下游三层对称。
+
+    load_images 是"可选能力"而非抽象方法：多数格式（txt/md）无内嵌图，基类默认
+    返回空列表；有图格式（PDF）覆盖它。这样上层编排对所有格式同样调用、无需判型。"""
+
+    @abstractmethod
+    def load(self, path: str | Path) -> Document:
+        """把单个文件解析成一个 Document。"""
+        ...
+
+    # 软契约
+    def load_images(self, path: str | Path, out_dir: str | Path) -> list[dict]:
+        """抽取文档内嵌图，返回 [{page,xref,path,width,height}, ...]。默认无图。"""
+        return []
+
 
 class Chunker(ABC):
     """分块器：Document -> list[Chunk]"""
