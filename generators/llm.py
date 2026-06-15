@@ -101,9 +101,12 @@ class LLMGenerator(Generator):
         for n in used_nums:
             r = mapping.get(n)
             if r is not None:
+                md = r.chunk.metadata or {}
                 sources.append({
                     "n": n, "id": r.chunk.id,
                     "source": r.chunk.source, "score": round(r.score, 3),
+                    "text": r.chunk.text.strip(),  # 原文片段：可溯源的依据
+                    "kind": md.get("kind", "text"),  # 图块的 text 实为 VLM caption
                 })
         return sources
 

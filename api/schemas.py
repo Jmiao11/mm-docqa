@@ -48,6 +48,8 @@ class Citation(BaseModel):
     id: str                            # chunk.id
     source: str                        # 来源文件名
     score: float
+    text: str = ""                     # 检索到的原文片段（可溯源：点击展开看依据）
+    kind: str = "text"                 # text | image（图块的 text 是 VLM caption）
 
 
 class ImageHit(BaseModel):
@@ -65,6 +67,7 @@ class QueryResponse(BaseModel):
     images: list[ImageHit] = []  # ← 新增
     n_retrieved: int = 0
     standalone_query: str = ""   # 多轮：历史感知改写后的独立检索 query（首轮=原问题）
+
 
 # ---------- 通用 ----------
 class DeleteResponse(BaseModel):
