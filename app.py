@@ -176,6 +176,48 @@ def new_session():
     return str(uuid.uuid4()), [], "", gr.update(value=[], visible=False)
 
 
+def refresh_sessions(current_sid):
+    """拉取会话列表填充下拉框；若当前会话已在列表中则保持选中（程序化设值不触发 .select，无循环）。"""
+    try:
+        resp = requests.get(f"{API}/sessions", timeout=30)
+        resp.raise_for_status()
+        sessions = resp.json()
+    except Exception:
+        return gr.update(choices=[])
+    choices = [(f"{(s['title'] or '（无标题）')[:24]}（{s['n']}）", s["session_id"]) for s in sessions]
+    val = current_sid if any(sid == current_sid for _, sid in choices) else None
+    return gr.update(choices=choices, value=val)
+
+
+def switch_session(session_id):
+    """切换到某历史会话：拉它的消息、重建对话显示（用存好的 sources 复原可溯源 <details>）。
+    session_state 设为该 id → 下一句提问的改写器自动读这个会话历史 → 自然续上。
+    返回 (重建的history, session_state, 清空pending, 隐藏Gallery)。"""
+    if not session_id:
+        return [], str(uuid.uuid4()), "", gr.update(value=[], visible=False)
+    try:
+        resp = requests.get(f"{API}/sessions/{session_id}/messages", timeout=30)
+        resp.raise_for_status()
+        msgs = resp.json()
+    except Exception as e:
+        return ([{"role": "assistant", "content": f"加载会话失败：{e}"}],
+                session_id, "", gr.update(value=[], visible=False))
+
+    history = []
+    for m in msgs:
+        if m.get("role") == "user":
+            history.append({"role": "user", "content": m.get("content", "")})
+        else:
+            parts = [m.get("content", "")]
+            srcs = m.get("sources") or []
+            if srcs:
+                parts.append("\n---\n**引用来源（点击展开原文溯源）：**\n")
+                for c in srcs:
+                    parts.append(_citation_details(c))
+            history.append({"role": "assistant", "content": "\n".join(parts)})
+    return history, session_id, "", gr.update(value=[], visible=False)
+
+
 # 约束命中插图缩略图：等比缩放 + 限高，避免 object_fit 在某些 gradio 版本压不住高度导致裁切。
 # 点击放大的全屏预览是独立浮层、不受此 CSS 影响，仍看全图。
 GALLERY_CSS = """
@@ -207,7 +249,9 @@ with gr.Blocks(title="mm-docqa 文档问答助手", css=GALLERY_CSS) as demo:
         with gr.Column(scale=2):
             with gr.Row():
                 gr.Markdown("### 提问")
-                new_chat_btn = gr.Button("🆕 新会话", scale=0, min_width=110)
+                new_chat_btn = gr.Button("🆕 新会话", scale=0, min_width=100)
+            session_dropdown = gr.Dropdown(label="历史会话（点击切换 / 继续）",
+                                           choices=[], value=None, interactive=True)
             # session_id 存在前端 State；每次新会话换 uuid。后端按此 key 取历史做改写。
             session_state = gr.State(str(uuid.uuid4()))
             pending = gr.State("")   # 两步链之间传递“待答的原始问题字符串”
@@ -246,18 +290,26 @@ with gr.Blocks(title="mm-docqa 文档问答助手", css=GALLERY_CSS) as demo:
             .then(refresh_doc_choices, outputs=del_dropdown)
 
         # 提问两步链：① user_submit 瞬时显示用户气泡+清空输入框+存 pending（queue=False 不排队）
-        #            ② bot_respond 用 pending 打后端、追加助手气泡（慢，排队）。点按钮/回车都触发。
+        #            ② bot_respond 用 pending 打后端、追加助手气泡（慢，排队）③ 刷新会话列表
         _u_io = dict(inputs=[question, chatbot], outputs=[chatbot, question, pending])
         _b_io = dict(inputs=[chatbot, k_slider, session_state, pending], outputs=[chatbot, gallery_out])
-        ask_btn.click(user_submit, **_u_io, queue=False).then(bot_respond, **_b_io)
-        question.submit(user_submit, **_u_io, queue=False).then(bot_respond, **_b_io)
+        ask_btn.click(user_submit, **_u_io, queue=False).then(bot_respond, **_b_io) \
+            .then(refresh_sessions, inputs=[session_state], outputs=[session_dropdown])
+        question.submit(user_submit, **_u_io, queue=False).then(bot_respond, **_b_io) \
+            .then(refresh_sessions, inputs=[session_state], outputs=[session_dropdown])
 
-        # 新会话：换 session_id + 清空对话/输入框/Gallery（后端历史按新 key 翻篇）
+        # 切换会话：用户在下拉里选某会话 → 加载其历史、续上（.select 仅用户操作触发，刷新列表不会误触）
+        session_dropdown.select(switch_session, inputs=[session_dropdown],
+                                outputs=[chatbot, session_state, pending, gallery_out])
+
+        # 新会话：换 session_id + 清空界面，再刷新列表（上一会话若已有消息会出现在列表里）
         new_chat_btn.click(new_session,
-                           outputs=[session_state, chatbot, question, gallery_out])
+                           outputs=[session_state, chatbot, question, gallery_out]) \
+            .then(refresh_sessions, inputs=[session_state], outputs=[session_dropdown])
 
         demo.load(refresh_docs, outputs=doc_list) \
-            .then(refresh_doc_choices, outputs=del_dropdown)  # 打开页面就加载列表+下拉框
+            .then(refresh_doc_choices, outputs=del_dropdown) \
+            .then(refresh_sessions, inputs=[session_state], outputs=[session_dropdown])  # 打开页面加载文档列表+删除下拉+会话列表
 
 if __name__ == "__main__":
     demo.launch(server_name="127.0.0.1", server_port=7860)

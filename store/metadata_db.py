@@ -115,5 +115,29 @@ class MetadataDB:
             out.append(d)
         return out
 
+    def list_sessions(self) -> list[dict[str, Any]]:
+        """列出所有会话（从 messages 表聚合派生，不另立表）。
+        title = 该会话最早的一条用户提问；n = 消息数；last_at = 最后活动时间。
+        按最近活动降序——最新对话排最前，符合聊天侧栏直觉。"""
+        rows = self.conn.execute(
+            """
+            SELECT m.session_id AS session_id,
+                   (SELECT content FROM messages
+                      WHERE session_id = m.session_id AND role = 'user'
+                      ORDER BY id LIMIT 1) AS title,
+                   COUNT(*)         AS n,
+                   MAX(m.created_at) AS last_at
+            FROM messages m
+            GROUP BY m.session_id
+            ORDER BY last_at DESC
+            """
+        ).fetchall()
+        return [
+            {"session_id": r["session_id"],
+             "title": (r["title"] or "（无标题）"),
+             "n": r["n"], "last_at": r["last_at"]}
+            for r in rows
+        ]
+
     def close(self) -> None:
         self.conn.close()

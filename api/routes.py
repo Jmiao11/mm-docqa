@@ -15,9 +15,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFi
 # ① 顶部 import
 from api.schemas import (
     Citation, DeleteResponse, DocInfo, DocStatus, ImageHit,   # ← 加 ImageHit
-    QueryRequest, QueryResponse, UploadResponse,
+    MessageItem, QueryRequest, QueryResponse, SessionInfo, UploadResponse,
 )
-from ingest.parser import parse_pdf
 
 router = APIRouter()
 
@@ -34,11 +33,12 @@ def _index_document(app, doc_id: str, source: str, file_path: str) -> None:
     try:
         db.update_document(doc_id, status="processing")
 
-        doc = loader.load(file_path)  # 按扩展名分派：pdf/txt/md，routes 不判型
+        doc = loader.load(file_path)     # 按扩展名分派：pdf/txt/md，routes 不判型
         doc.id = doc_id  # 用统一的 doc_id，便于关联
         n_text = pipeline.index([doc])  # 文本：semantic 切块入库
 
         # 多模态：抽图 → VLM caption → 图块入同一检索器（caption-then-embed）
+        # load_images 对无图格式（txt/md）返回 []，故下方循环自然跳过，无需判型。
         n_img = 0
         captioner = getattr(app.state, "captioner", None)
         if captioner is not None:
@@ -46,6 +46,7 @@ def _index_document(app, doc_id: str, source: str, file_path: str) -> None:
             from core.paths import DATA_DIR
             figures = loader.load_images(file_path, DATA_DIR / "images")
             img_chunks = build_image_chunks(figures, captioner, doc.source)
+
             if img_chunks:
                 pipeline.retriever.index(img_chunks)
                 n_img = len(img_chunks)
@@ -66,7 +67,7 @@ async def upload_document(request: Request, background: BackgroundTasks,
                           file: UploadFile):
     loader = request.app.state.loader
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in loader.supported:  # 已支持后缀以 loader 注册表为唯一真相
+    if suffix not in loader.supported:          # 已支持后缀以 loader 注册表为唯一真相
         raise HTTPException(400, f"暂不支持 {suffix or '该'} 格式；已支持：{loader.supported}")
 
     doc_id = Path(file.filename).stem
@@ -198,3 +199,21 @@ async def delete_document(request: Request, doc_id: str):
 
     return DeleteResponse(doc_id=doc_id, deleted=deleted,
                           n_chunks=result.n_chunks, n_images=n_images)
+
+# ---------- 会话管理（只读：列表 + 某会话历史） ----------
+# 前端调这个接口拿到的是：
+# json[
+#   {"session_id": "abc-123", "title": "github怎么提交?", "n": 3, "last_at": 1234567890},
+#   {"session_id": "def-456", "title": "社会网络图中心...", "n": 5, "last_at": 1234567800}
+# ]
+
+@router.get("/sessions", response_model=list[SessionInfo])
+async def list_sessions(request: Request):
+    """列出所有会话（按最近活动降序），供前端做会话切换列表。"""
+    return request.app.state.db.list_sessions()
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[MessageItem])
+async def get_session_messages(request: Request, session_id: str):
+    """取某会话的全部历史消息（含结构化引用），供切换时还原对话显示。"""
+    return request.app.state.db.get_messages(session_id)

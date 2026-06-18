@@ -69,6 +69,22 @@ class QueryResponse(BaseModel):
     standalone_query: str = ""   # 多轮：历史感知改写后的独立检索 query（首轮=原问题）
 
 
+# ---------- 会话 ----------
+class SessionInfo(BaseModel):
+    """会话列表项（从 messages 聚合派生）。"""
+    session_id: str
+    title: str = ""
+    n: int = 0
+    last_at: float = 0.0
+
+
+class MessageItem(BaseModel):
+    """单条历史消息（切换会话时还原显示用）。"""
+    role: str
+    content: str
+    sources: list[Citation] = []
+
+
 # ---------- 通用 ----------
 class DeleteResponse(BaseModel):
     doc_id: str
