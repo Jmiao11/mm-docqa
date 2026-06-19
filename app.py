@@ -176,6 +176,17 @@ def new_session():
     return str(uuid.uuid4()), [], "", gr.update(value=[], visible=False)
 
 
+def delete_current_session(session_id):
+    """删除当前会话（清空它在 SQLite 的全部消息）→ 翻到一个新空会话 + 清界面。
+    空/新建未发言的会话删它=删 0 行，安全。返回与 new_session 同形。"""
+    if session_id:
+        try:
+            requests.delete(f"{API}/sessions/{session_id}", timeout=30)
+        except Exception:
+            pass
+    return str(uuid.uuid4()), [], "", gr.update(value=[], visible=False)
+
+
 def refresh_sessions(current_sid):
     """拉取会话列表填充下拉框；若当前会话已在列表中则保持选中（程序化设值不触发 .select，无循环）。"""
     try:
@@ -228,6 +239,8 @@ GALLERY_CSS = """
 /* 每个选项独占一行 → 把默认的横向药丸网格变成干净的竖直列表（侧栏式） */
 #session-list label { width: 100% !important; box-sizing: border-box !important;
     margin: 2px 0 !important; font-size: 0.9em !important; }
+/* 会话操作按钮：紧凑、不折行 */
+.sess-btn { white-space: nowrap !important; flex: 0 0 auto !important; }
 """
 
 # ---------- 界面布局 ----------
@@ -254,7 +267,10 @@ with gr.Blocks(title="mm-docqa 文档问答助手", css=GALLERY_CSS) as demo:
         with gr.Column(scale=2):
             with gr.Row():
                 gr.Markdown("### 提问")
-                new_chat_btn = gr.Button("🆕 新会话", scale=0, min_width=100)
+                new_chat_btn = gr.Button("🆕 新会话", scale=0, size="sm",
+                                         min_width=72, elem_classes="sess-btn")
+                del_session_btn = gr.Button("🗑 删除会话", scale=0, size="sm",
+                                            min_width=72, elem_classes="sess-btn")
             # 会话列表用 Radio（竖直单选列表）而非 Dropdown：Dropdown 闭合时仍捕获滚轮、
             # 与页面滚动抢事件；Radio 不因滚轮改值，配 CSS overscroll-behavior 隔离滚动。
             session_dropdown = gr.Radio(label="历史会话（点击切换 / 继续）",
@@ -313,6 +329,11 @@ with gr.Blocks(title="mm-docqa 文档问答助手", css=GALLERY_CSS) as demo:
         # 新会话：换 session_id + 清空界面，再刷新列表（上一会话若已有消息会出现在列表里）
         new_chat_btn.click(new_session,
                            outputs=[session_state, chatbot, question, gallery_out]) \
+            .then(refresh_sessions, inputs=[session_state], outputs=[session_dropdown])
+
+        # 删除此会话：删当前会话的全部消息 → 翻到新空会话 → 刷新列表（被删的消失）
+        del_session_btn.click(delete_current_session, inputs=[session_state],
+                              outputs=[session_state, chatbot, question, gallery_out]) \
             .then(refresh_sessions, inputs=[session_state], outputs=[session_dropdown])
 
         demo.load(refresh_docs, outputs=doc_list) \

@@ -15,7 +15,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFi
 # ① 顶部 import
 from api.schemas import (
     Citation, DeleteResponse, DocInfo, DocStatus, ImageHit,   # ← 加 ImageHit
-    MessageItem, QueryRequest, QueryResponse, SessionInfo, UploadResponse,
+    MessageItem, QueryRequest, QueryResponse, SessionDeleteResponse,
+    SessionInfo, UploadResponse,
 )
 
 router = APIRouter()
@@ -201,12 +202,6 @@ async def delete_document(request: Request, doc_id: str):
                           n_chunks=result.n_chunks, n_images=n_images)
 
 # ---------- 会话管理（只读：列表 + 某会话历史） ----------
-# 前端调这个接口拿到的是：
-# json[
-#   {"session_id": "abc-123", "title": "github怎么提交?", "n": 3, "last_at": 1234567890},
-#   {"session_id": "def-456", "title": "社会网络图中心...", "n": 5, "last_at": 1234567800}
-# ]
-
 @router.get("/sessions", response_model=list[SessionInfo])
 async def list_sessions(request: Request):
     """列出所有会话（按最近活动降序），供前端做会话切换列表。"""
@@ -217,3 +212,10 @@ async def list_sessions(request: Request):
 async def get_session_messages(request: Request, session_id: str):
     """取某会话的全部历史消息（含结构化引用），供切换时还原对话显示。"""
     return request.app.state.db.get_messages(session_id)
+
+
+@router.delete("/sessions/{session_id}", response_model=SessionDeleteResponse)
+async def delete_session(request: Request, session_id: str):
+    """删除一个会话（清空其全部消息）。镜像 DELETE /documents/{doc_id} 的对称删除。"""
+    n = request.app.state.db.delete_session(session_id)
+    return SessionDeleteResponse(session_id=session_id, deleted_messages=n)

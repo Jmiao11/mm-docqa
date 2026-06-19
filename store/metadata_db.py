@@ -139,5 +139,12 @@ class MetadataDB:
             for r in rows
         ]
 
+    def delete_session(self, session_id: str) -> int:
+        """删除一个会话：清掉它在 messages 表的全部行（会话由 messages 派生，删行即删会话，零孤儿）。
+        返回删除的消息条数。"""
+        cur = self.conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        self.conn.commit()
+        return cur.rowcount
+
     def close(self) -> None:
         self.conn.close()

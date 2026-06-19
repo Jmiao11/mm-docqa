@@ -85,6 +85,12 @@ class MessageItem(BaseModel):
     sources: list[Citation] = []
 
 
+class SessionDeleteResponse(BaseModel):
+    """删除会话返回。"""
+    session_id: str
+    deleted_messages: int = 0
+
+
 # ---------- 通用 ----------
 class DeleteResponse(BaseModel):
     doc_id: str
