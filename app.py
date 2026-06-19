@@ -223,6 +223,11 @@ def switch_session(session_id):
 GALLERY_CSS = """
 #hit-gallery img { object-fit: contain !important; max-height: 200px !important; }
 #hit-gallery .grid-wrap, #hit-gallery .grid-container { max-height: 220px !important; }
+/* 会话列表：限高 + 滚轮到边界不传导到页面，避免与页面滚动冲突 */
+#session-list { max-height: 200px; overflow-y: auto; overscroll-behavior: contain; }
+/* 每个选项独占一行 → 把默认的横向药丸网格变成干净的竖直列表（侧栏式） */
+#session-list label { width: 100% !important; box-sizing: border-box !important;
+    margin: 2px 0 !important; font-size: 0.9em !important; }
 """
 
 # ---------- 界面布局 ----------
@@ -250,8 +255,11 @@ with gr.Blocks(title="mm-docqa 文档问答助手", css=GALLERY_CSS) as demo:
             with gr.Row():
                 gr.Markdown("### 提问")
                 new_chat_btn = gr.Button("🆕 新会话", scale=0, min_width=100)
-            session_dropdown = gr.Dropdown(label="历史会话（点击切换 / 继续）",
-                                           choices=[], value=None, interactive=True)
+            # 会话列表用 Radio（竖直单选列表）而非 Dropdown：Dropdown 闭合时仍捕获滚轮、
+            # 与页面滚动抢事件；Radio 不因滚轮改值，配 CSS overscroll-behavior 隔离滚动。
+            session_dropdown = gr.Radio(label="历史会话（点击切换 / 继续）",
+                                        choices=[], value=None, interactive=True,
+                                        elem_id="session-list")
             # session_id 存在前端 State；每次新会话换 uuid。后端按此 key 取历史做改写。
             session_state = gr.State(str(uuid.uuid4()))
             pending = gr.State("")   # 两步链之间传递“待答的原始问题字符串”
