@@ -1,0 +1,6 @@
+{"query": "本研究将政策工具分为哪三类", "expected_answer": "供给型;需求型;环境型", "relevant_chunk_ids": ["9b6fa194ac750cef", "501ae4da6dd4944f"]}
+{"query": "最终确定的主题数是多少", "expected_answer": "12", "relevant_chunk_ids": ["c6b0da78a3bbeed7", "0b3a3703936d20c8"]}
+{"query": "困惑度曲线说明了什么趋势", "expected_answer": "急剧下降;趋于平缓", "relevant_chunk_ids": ["c6b0da78a3bbeed7", "3a00659286750425"]}
+{"query": "本文采用了什么研究方法", "expected_answer": "LDA;社会网络分析", "relevant_chunk_ids": ["288b5395fa9c00c6", "3d184b31aeef046b"]}
+{"query": "本文分析了多少份政策文本", "expected_answer": "43", "relevant_chunk_ids": ["288b5395fa9c00c6"]}
+{"query": "社会网络分析得出了什么结论", "expected_answer": "12个主要节点;各节点贡献度接近;强制性治理", "relevant_chunk_ids": ["89b801eba3ae73b3", "4239fd1a5fbabfb4"]}
