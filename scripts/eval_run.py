@@ -20,9 +20,19 @@ pdf = (glob.glob("*.pdf") + glob.glob(str(DATA_DIR / "**/*.pdf"), recursive=True
 chunks = SemanticChunker(max_size=200, overlap_sentences=1).split(parse_pdf(pdf))
 
 emb = get_embedder("BAAI/bge-small-zh-v1.5")
+
+# eval_set 是纯派生集合(脚本每次全量重建)。用「删集合再重建」替代「delete(where=全删)」：
+# 后者会路由到 chroma compactor 去读 HNSW 段，跨进程残留的半落盘段会让它崩
+# (InternalError: Error loading hnsw index)。删整集合不读旧段，干净幂等；
+# DenseRetriever 构造时以 cosine 重新 get_or_create，不丢距离度量配置。
+import chromadb
+try:
+    chromadb.PersistentClient(path=str(CHROMA_DIR)).delete_collection("eval_set")
+except Exception:
+    pass
 dense = DenseRetriever(embedder=emb, persist_dir=str(CHROMA_DIR), collection_name="eval_set")
-dense.collection.delete(where={"source": {"$ne": ""}})   # 清空旧向量，重新入库
 dense.index(chunks)
+
 hybrid = HybridRetriever(dense)        # 从同一集合派生 BM25
 
 ev = RetrievalEvaluator(k=5)
