@@ -30,6 +30,9 @@ import re
 import statistics
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()  # 自足加载 .env：judge 可能在不建 LLM pipeline 的场景被单用，不能依赖别人先 load
+
 from core.interfaces import Evaluator, RAGResult, EvalSample
 
 # 去掉 LLM 可能给 JSON 包的 ```json ... ``` 围栏（很多模型改不掉这习惯）
@@ -68,7 +71,7 @@ class LLMJudgeEvaluator(Evaluator):
         base_url: str = "https://api.moonshot.cn/v1",
         api_key_env: str = "MOONSHOT_API_KEY",
         n_samples: int = 3,                            # 同题采样次数：治非确定
-        temperature: float = 0.6,                      # >0 才能让多次采样真的有分布
+        temperature: float = 1.0,  # kimi-k2.6 仅允许 temperature=1；>0 即可让多次采样有分布
         max_context_chars: int = 2000,                 # 上下文截断，控 token
     ):
         self._client = client
