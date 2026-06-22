@@ -4,3 +4,9 @@
 {"query": "本文采用了什么研究方法", "expected_answer": "LDA;社会网络分析", "relevant_chunk_ids": ["7eb4c1a22caea180", "17ea59e4b74fa336"]}
 {"query": "本文分析了多少份政策文本", "expected_answer": "43", "relevant_chunk_ids": ["7eb4c1a22caea180"]}
 {"query": "社会网络分析得出了什么结论", "expected_answer": "12个主要节点;各节点贡献度接近;强制性治理", "relevant_chunk_ids": ["70e6286cb2c3ee76", "32bc4981aa7950d2"]}
+{"query": "本文分析的政策文本覆盖全国多少个省份", "expected_answer": "24", "relevant_chunk_ids": ["475a39387ac0e47b", "38422b24511d33c9"]}
+{"query": "本文用哪两种方法综合确定最佳主题数", "expected_answer": "主题一致性得分;困惑度曲线", "relevant_chunk_ids": ["043aacc5007ac478"]}
+{"query": "本文借助什么软件构建主题特征词的社会网络", "expected_answer": "Gephi", "relevant_chunk_ids": ["1b7667614bebdfec", "12ed1b970bbab050"]}
+{"query": "本文分析的政策文本现行有效的时间截至何时", "expected_answer": "2022年12月", "relevant_chunk_ids": ["aed8e32a0b4e00ed"]}
+{"query": "针对政策工具失衡本文建议倡导哪种治理理念", "expected_answer": "柔性治理", "relevant_chunk_ids": ["e11cd3ffd1694354"]}
+{"query": "本文发现我国数字经济政策过度依赖哪一类政策工具", "expected_answer": "供给型", "relevant_chunk_ids": ["db3830944172c1e3", "a83912624b4dd0ac"]}
