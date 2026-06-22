@@ -3,7 +3,7 @@
 跑法：跑**完整 pipeline.run**(检索→生成)，真调 DeepSeek/kimi，拿带答案的
 RAGResult 再评。评的是用户真实体验那套配置(rerank+semantic+vlm)。
 
-题目从 data/golden.jsonl 读（单一真相源），用 expected_answer 字段。
+题目从 evaluators/golden.jsonl 读（单一真相源），用 expected_answer 字段。
 
 两层评估：
   确定性(免费、快、常驻)：CitationPrecision(抓幻觉引用) + AnswerCoverage(字面命中，弱信号)。

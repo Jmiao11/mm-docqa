@@ -1,6 +1,6 @@
 """列出每个查询的候选块(带完整 id)，供人工标注相关块。python scripts/eval_label.py
 
-题目从 data/golden.jsonl 读（只需 query）。标完把相关块 id 填回 golden.jsonl 的
+题目从 evaluators/golden.jsonl 读（只需 query）。标完把相关块 id 填回 golden.jsonl 的
 relevant_chunk_ids 字段，扩集 = 在 golden.jsonl 追加一行后重跑本脚本拿候选。
 """
 import glob
@@ -12,7 +12,7 @@ from chunkers.semantic import SemanticChunker
 from retrievers.dense import DenseRetriever
 from retrievers.hybrid import HybridRetriever
 
-# 题目来自单一真相源 data/golden.jsonl
+# 题目来自单一真相源 evaluators/golden.jsonl
 QUERIES = load_queries()
 
 # 坚不可摧的路径查找逻辑

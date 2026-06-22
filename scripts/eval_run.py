@@ -1,6 +1,6 @@
 """对比 dense vs hybrid 的检索指标。python scripts/eval_run.py
 
-黄金集已外置到 data/golden.jsonl（单一真相源），用 relevant_chunk_ids 字段。
+黄金集已外置到 evaluators/golden.jsonl（单一真相源），用 relevant_chunk_ids 字段。
 """
 import glob
 from core.config import get_embedder
@@ -13,7 +13,7 @@ from retrievers.dense import DenseRetriever
 from retrievers.hybrid import HybridRetriever
 from evaluators.retrieval import RetrievalEvaluator
 
-# 黄金评估集：从 data/golden.jsonl 读，检索侧只用 relevant_chunk_ids 非空的题
+# 黄金评估集：从 evaluators/golden.jsonl 读，检索侧只用 relevant_chunk_ids 非空的题
 samples = [s for s in load_golden() if s.relevant_chunk_ids]
 
 pdf = (glob.glob("*.pdf") + glob.glob(str(DATA_DIR / "**/*.pdf"), recursive=True))[0]
