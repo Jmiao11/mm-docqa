@@ -6,6 +6,20 @@
 
 技术栈：Python · FastAPI · Gradio · ChromaDB · sentence-transformers(bge) · DeepSeek / Moonshot(kimi-k2.6)
 
+![Python](https://img.shields.io/badge/Python-3.12-blue) ![License](https://img.shields.io/badge/License-MIT-green) ![Eval](https://img.shields.io/badge/golden_set-12_queries-orange)
+
+> **一眼结果**(12 题黄金集,本机可复现):检索 Recall@5 **0.58 → 0.79**(hybrid) · 引用零幻觉 CitationPrecision **1.0** · 跨厂商 LLM 裁判 correctness **0.96** · 裁判人工校准 **MAE 0** · 并诚实定位一处检索缺陷。
+
+------
+
+## 项目演示
+
+| 功能                                                         | 界面                                         |
+| ------------------------------------------------------------ | -------------------------------------------- |
+| **核心问答 + 可溯源引用**<br>上传文档→提问→答案带 `[n]` 引用,点开折叠块即见检索原文 | ![qa](docs/images/demo-qa.png)               |
+| **多模态:图表也能被检索**<br>问图表相关问题,命中图以 Gallery 展示、VLM 看图作答 | ![vlm](docs/images/demo-vlm.png)             |
+| **多轮追问**<br>依赖上文的追问经历史感知改写后仍正确召回     | ![multiturn](docs/images/demo-multiturn.png) |
+
 ------
 
 ## 核心设计：接口隔离（这是整个项目的承重墙）
