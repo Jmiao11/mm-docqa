@@ -1,8 +1,13 @@
-"""dense / hybrid / rerank 三者检索指标对比(k=3,5)+ 延迟。python scripts/eval_rerank.py"""
+"""dense / hybrid / rerank 三者检索指标对比(k=3,5)+ 延迟。python scripts/eval_rerank.py
+
+题目从 evaluators/golden.jsonl 读(单一真相源)，只用有 relevant_chunk_ids 的题。
+"""
 import glob, time
+
 from core.config import get_embedder, get_reranker
 from core.paths import CHROMA_DIR, DATA_DIR
-from core.interfaces import RAGResult, EvalSample
+from core.interfaces import RAGResult
+from evaluators.golden import load_golden
 from ingest.parser import parse_pdf
 from chunkers.semantic import SemanticChunker
 from retrievers.dense import DenseRetriever
@@ -10,21 +15,21 @@ from retrievers.hybrid import HybridRetriever
 from retrievers.rerank import RerankRetriever
 from evaluators.retrieval import RetrievalEvaluator
 
-SAMPLES = [
-    ("本研究将政策工具分为哪三类", ["9b6fa194ac750cef", "501ae4da6dd4944f"]),
-    ("最终确定的主题数是多少",     ["c6b0da78a3bbeed7", "0b3a3703936d20c8"]),
-    ("困惑度曲线说明了什么趋势",   ["c6b0da78a3bbeed7", "3a00659286750425"]),
-    ("本文采用了什么研究方法",     ["288b5395fa9c00c6", "3d184b31aeef046b"]),
-    ("本文分析了多少份政策文本",   ["288b5395fa9c00c6"]),
-    ("社会网络分析得出了什么结论", ["89b801eba3ae73b3", "4239fd1a5fbabfb4"]),
-]
-samples = [EvalSample(query=q, relevant_chunk_ids=ids) for q, ids in SAMPLES]
+samples = [s for s in load_golden() if s.relevant_chunk_ids]
 
 pdf = (glob.glob("*.pdf") + glob.glob(str(DATA_DIR / "**/*.pdf"), recursive=True))[0]
 chunks = SemanticChunker(max_size=200, overlap_sentences=1).split(parse_pdf(pdf))
 emb = get_embedder("BAAI/bge-small-zh-v1.5")
+
+# eval_set 是纯派生集合(每次全量重建)。用「删集合再重建」替代「delete(where=全删)」：
+# 后者会路由到 chroma compactor 去读 HNSW 段，跨进程残留的半落盘段会让它崩。
+# 删整集合不读旧段，干净幂等；DenseRetriever 构造时以 cosine 重新 get_or_create。
+import chromadb
+try:
+    chromadb.PersistentClient(path=str(CHROMA_DIR)).delete_collection("eval_set")
+except Exception:
+    pass
 dense = DenseRetriever(embedder=emb, persist_dir=str(CHROMA_DIR), collection_name="eval_set")
-dense.collection.delete(where={"source": {"$ne": ""}})
 dense.index(chunks)
 hybrid = HybridRetriever(dense)
 rerank = RerankRetriever(base=hybrid, reranker=get_reranker("BAAI/bge-reranker-base"), candidate_k=20)
@@ -32,9 +37,10 @@ rerank = RerankRetriever(base=hybrid, reranker=get_reranker("BAAI/bge-reranker-b
 retrievers = [("dense", dense), ("hybrid", hybrid), ("rerank", rerank)]
 for k in (3, 5):
     ev = RetrievalEvaluator(k=k)
-    print(f"\n=== top-k={k} ===")
+    print(f"\n=== top-k={k} | {len(samples)} 题 ===")
     for name, retr in retrievers:
         t = time.perf_counter()
-        results = [RAGResult(query=q, retrieved=retr.retrieve(q, k), answer="") for q, _ in SAMPLES]
-        ms = (time.perf_counter() - t) / len(SAMPLES) * 1000
+        results = [RAGResult(query=s.query, retrieved=retr.retrieve(s.query, k), answer="")
+                   for s in samples]
+        ms = (time.perf_counter() - t) / len(samples) * 1000
         print(f"[{name:7}] {ev.evaluate(results, samples)}  ~{ms:.0f}ms/q")
