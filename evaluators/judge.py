@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 import statistics
+import sys
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -134,12 +135,15 @@ class LLMJudgeEvaluator(Evaluator):
         n_judged = 0
         n_failed = 0                    # 全部采样都失败的题数
 
-        for s in samples:
+        for i, s in enumerate(samples, 1):
             r = by_query.get(s.query)
             if r is None:
                 continue
 
+            print(f"[judge] 判题 {i}/{len(samples)}: {s.query[:16]}…",
+                  file=sys.stderr, flush=True)  # 进度可见，避免36次顺序调用全程静默像卡死
             context = self._context_of(r, self.max_context_chars)
+
             corr_samples: list[int] = []
             grnd_samples: list[int] = []
             for _ in range(self.n_samples):
@@ -190,6 +194,9 @@ class LLMJudgeEvaluator(Evaluator):
             r = by_query.get(s.query)
             if r is None:
                 continue
+
+            print(f"[judge] 校准判题: {s.query[:16]}…",
+                  file=sys.stderr, flush=True)
 
             context = self._context_of(r, self.max_context_chars)
             corr_samples = []
